@@ -1,0 +1,21 @@
+# Local stack: the API on the offline simulator, plus Prometheus scraping its metrics.
+# Point it at Azure by setting the ARCHEVAL_* variables in .env (see .env.example).
+services:
+  api:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ARCHEVAL_LLM_PROVIDER: ${ARCHEVAL_LLM_PROVIDER:-sim}
+      ARCHEVAL_VECTOR_STORE: ${ARCHEVAL_VECTOR_STORE:-memory}
+    ports: ["8000:8000"]
+    read_only: true
+    tmpfs: ["/tmp"]
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: ["9090:9090"]
+    depends_on: [api]

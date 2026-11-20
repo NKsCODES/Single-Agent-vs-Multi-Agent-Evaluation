@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "archeval"
+version = "1.0.0"
+description = "Single-agent vs orchestrator-worker evaluation on Azure: success rate vs cost per task, with RAG on Azure Cosmos DB."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Niraj Koli" }]
+dependencies = [
+  "agent-framework-core>=1.26,<2",
+  "agent-framework-openai>=1.18,<2",
+  "openai>=2.0",
+  "azure-identity>=1.19",
+  "azure-cosmos>=4.9",
+  "httpx>=0.27",
+  "httpx2>=2.0",
+  "numpy>=1.26",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.10",
+  "pydantic-settings>=2.6",
+  "prometheus-client>=0.21",
+  "structlog>=24.4",
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+azure-ops = ["azure-monitor-opentelemetry>=1.6", "azure-ai-contentsafety>=1.0"]
+eval = ["matplotlib>=3.9"]
+dev = ["pytest>=8", "pytest-cov>=5", "pytest-asyncio>=0.24", "ruff>=0.8", "mypy>=1.13"]
+
+[project.scripts]
+archeval = "archeval.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/archeval"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF012", "B008", "RUF001"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+packages = ["archeval"]
+mypy_path = "src"
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

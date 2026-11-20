@@ -1,0 +1,33 @@
+name: live-eval
+# Measure real models: the same benchmark against the Azure OpenAI deployments. Manual only,
+# because it spends money. Start with one repeat; the run prints its total cost.
+on:
+  workflow_dispatch:
+    inputs:
+      repeats: {description: "Seeds per task", default: "1"}
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      ARCHEVAL_LLM_PROVIDER: azure
+      ARCHEVAL_AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+      ARCHEVAL_LARGE_DEPLOYMENT: large
+      ARCHEVAL_SMALL_DEPLOYMENT: small
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[eval,azure-ops]"
+      - run: archeval bench --out reports/live --repeats ${{ inputs.repeats }} --no-sensitivity
+      - run: cat reports/live/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: {name: live-report, path: reports/live}

@@ -1,0 +1,51 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e ".[dev,eval]"
+      - run: ruff check src tests
+      - run: mypy src
+      - run: pytest -q --cov=archeval --cov-report=xml --cov-fail-under=85
+
+  benchmark:
+    # The architecture decision is a tested artefact: every PR re-runs the benchmark offline
+    # (simulator, zero cost) and fails if the production route regresses on quality or cost.
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e ".[eval]"
+      - run: archeval bench --out reports/latest --repeats 3
+      - run: archeval gate reports/latest/summary.json --min-success 0.95 --max-cost-ratio 0.75
+      - name: Post the report to the job summary
+        run: cat reports/latest/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with: {name: benchmark-report, path: reports/latest}
+
+  image:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -e ".[eval]" && archeval bench --out reports/latest --repeats 1 --no-sensitivity --no-charts
+      - run: docker build -t archeval:${{ github.sha }} .
+      - name: Smoke test the image
+        run: |
+          docker run -d --name api -p 8000:8000 archeval:${{ github.sha }}
+          for i in $(seq 1 30); do curl -fs localhost:8000/readyz && break; sleep 1; done
+          curl -fs -X POST localhost:8000/v1/ask -H 'content-type: application/json' \
+            -d '{"question":"What is the uptime SLA of Contoso Mail?"}' | tee /dev/stderr | grep -q grounded

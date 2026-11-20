@@ -1,0 +1,41 @@
+name: deploy
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["src/**", "infra/**", "Dockerfile", "pyproject.toml"]
+permissions:
+  id-token: write   # OIDC federated credential, no client secret stored in GitHub
+  contents: read
+env:
+  RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Infrastructure (first pass creates the registry)
+        id: infra
+        run: |
+          out=$(az deployment group create -g "$RG" -f infra/main.bicep -p infra/main.bicepparam \
+                --query properties.outputs -o json)
+          echo "acr=$(echo "$out" | jq -r .acrLoginServer.value)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[eval]" && archeval bench --out reports/latest --repeats 1 --no-sensitivity --no-charts
+      - name: Build and push the image in ACR
+        run: az acr build -r "${{ steps.infra.outputs.acr }}" -t "archeval:${{ github.sha }}" .
+      - name: Roll out the new image
+        run: |
+          az deployment group create -g "$RG" -f infra/main.bicep -p infra/main.bicepparam \
+            -p image="${{ steps.infra.outputs.acr }}/archeval:${{ github.sha }}" -o none
+      - name: Smoke test
+        run: |
+          url=$(az deployment group show -g "$RG" -n main --query properties.outputs.apiUrl.value -o tsv)
+          curl -fs "$url/readyz"
